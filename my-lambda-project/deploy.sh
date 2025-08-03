@@ -2,8 +2,10 @@
 set -e
 
 echo "💡 Creating deployment package..."
-mkdir -p package
-pip install requests beautifulsoup4 -t ./package
+if [ ! -d package ]; then
+  mkdir package
+  pip install requests beautifulsoup4 dotenv -t ./package
+fi
 cp lambda_function.py package/
 cd package
 zip -r ../function.zip .

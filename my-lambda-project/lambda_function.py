@@ -4,9 +4,12 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import os
 import boto3
+from dotenv import load_dotenv
 
-API_KEY = "AIzaSyCE6OBgtaxk-RvqDrK9MpuqbQf8GdoptdM"
-CSE_ID = "e0b1d3b3f3e5a4108"
+load_dotenv()
+
+API_KEY = os.getenv("GOOGLE_API_KEY")
+CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
 def is_scraping_allowed(target_url, user_agent="*"):
     parsed_url = urlparse(target_url)
@@ -38,16 +41,33 @@ def google_search(query, num=10):
     results = response.json()
     return [item["link"] for item in results.get("items", [])]
 
-def save_text_to_s3(text, url, bucket_name):
+def save_text_to_s3(text, url, bucket_name, folder_name=None):
     s3 = boto3.client('s3')
-    # URLをファイル名として安全に変換
     from hashlib import sha256
     file_name = sha256(url.encode()).hexdigest() + ".txt"
-    s3.put_object(Bucket=bucket_name, Key=file_name, Body=text)
-    print(f"S3に保存しました: {file_name}")
+    # フォルダ名が指定されていればKeyに追加
+    if folder_name:
+        key = f"{folder_name}/{file_name}"
+    else:
+        key = file_name
+    s3.put_object(Bucket=bucket_name, Key=key, Body=text)
+    print(f"S3に保存しました: {key}")
+
+def clear_s3_folder(bucket_name, folder_name):
+    s3 = boto3.client('s3')
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_name + "/")
+    # フォルダ（Prefix）にファイルがなければスキップ
+    if "Contents" in response and response["KeyCount"] > 0:
+        for obj in response["Contents"]:
+            s3.delete_object(Bucket=bucket_name, Key=obj["Key"])
+        print(f"S3バケット「{bucket_name}」の「{folder_name}」フォルダ配下を全削除しました")
+    else:
+        print(f"S3上に「{folder_name}」フォルダが存在しないか、既に空です")
 
 def lambda_handler(event, context):
-    bucket_name = "learn-data-komahisa2017"  # 事前にS3バケットを作成しておいてください
+    bucket_name = "learn-data-komahisa2017"
+    folder_name = "印刷会社"
+    clear_s3_folder(bucket_name, folder_name)  # ← 59行目で全削除
     urls = google_search("印刷会社 site:.jp")
     for url in urls:
         print(f"{url}")
@@ -63,8 +83,6 @@ def lambda_handler(event, context):
             if body:
                 text = body.get_text(separator="\n", strip=True)
                 print(text)
-                save_text_to_s3(text, url, bucket_name)
+                save_text_to_s3(text, url, bucket_name, folder_name)
             else:
                 print("bodyタグが見つかりませんでした")
-
-# lambda_handler("","")
